@@ -43,6 +43,16 @@ telemetry:
         value_type: int
         monotonic: true
 
+    exporter_cached_failed_spans:
+      enabled: true
+      stability:
+        level: alpha
+      description: Number of spans failed to be added to the sending cache.
+      unit: "{spans}"
+      sum:
+        value_type: int
+        monotonic: true
+
     exporter_sent_metric_points:
       enabled: true
       stability:
@@ -68,6 +78,16 @@ telemetry:
       stability:
         level: alpha
       description: Number of metric points failed to be added to the sending queue.
+      unit: "{datapoints}"
+      sum:
+        value_type: int
+        monotonic: true
+
+    exporter_cached_failed_metric_points:
+      enabled: true
+      stability:
+        level: alpha
+      description: Number of metric points failed to be added to the sending cache.
       unit: "{datapoints}"
       sum:
         value_type: int
@@ -103,6 +123,16 @@ telemetry:
         value_type: int
         monotonic: true
 
+    exporter_cached_failed_log_records:
+      enabled: true
+      stability:
+        level: alpha
+      description: Number of log records failed to be added to the sending cache.
+      unit: "{records}"
+      sum:
+        value_type: int
+        monotonic: true
+
     exporter_queue_size:
       enabled: true
       stability:
@@ -113,11 +143,32 @@ telemetry:
         value_type: int
         async: true
 
+    exporter_cache_size:
+      enabled: true
+      stability:
+        level: alpha
+      description: Current size of the retry cache (in batches)
+      unit: "{batches}"
+      gauge:
+        value_type: int
+        async: true
+
+
     exporter_queue_capacity:
       enabled: true
       stability:
         level: alpha
       description: Fixed capacity of the retry queue (in batches)
+      unit: "{batches}"
+      gauge:
+        value_type: int
+        async: true
+
+    exporter_cache_capacity:
+      enabled: true
+      stability:
+        level: alpha
+      description: Fixed capacity of the retry cache (in batches)
       unit: "{batches}"
       gauge:
         value_type: int

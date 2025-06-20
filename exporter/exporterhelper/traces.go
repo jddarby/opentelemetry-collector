@@ -59,7 +59,10 @@ func newTracesRequest(td ptrace.Traces) Request {
 
 type tracesEncoding struct{}
 
-var _ QueueBatchEncoding[Request] = tracesEncoding{}
+var (
+	_ QueueBatchEncoding[Request] = tracesEncoding{}
+	_ CacheBatchEncoding[Request] = tracesEncoding{}
+)
 
 func (tracesEncoding) Unmarshal(bytes []byte) (context.Context, Request, error) {
 	if queue.PersistRequestContextOnRead {

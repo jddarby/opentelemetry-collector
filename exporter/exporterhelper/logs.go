@@ -27,6 +27,24 @@ var (
 	logsUnmarshaler = &plog.ProtoUnmarshaler{}
 )
 
+// NewLogsCacheBatchSettings returns a new QueueBatchSettings to configure to WithQueueBatch when using plog.Logs.
+// Experimental: This API is at the early stage of development and may change without backward compatibility
+// until https://github.com/open-telemetry/opentelemetry-collector/issues/8122 is resolved.
+func NewLogsCacheBatchSettings() CacheBatchSettings {
+	return CacheBatchSettings{
+		Encoding: logsEncoding{},
+		Sizers: map[RequestSizerType]request.Sizer[Request]{
+			RequestSizerTypeRequests: NewRequestsSizer(),
+			RequestSizerTypeItems:    request.NewItemsSizer(),
+			RequestSizerTypeBytes: request.BaseSizer{
+				SizeofFunc: func(req request.Request) int64 {
+					return int64(logsMarshaler.LogsSize(req.(*logsRequest).ld))
+				},
+			},
+		},
+	}
+}
+
 // NewLogsQueueBatchSettings returns a new QueueBatchSettings to configure to WithQueueBatch when using plog.Logs.
 // Experimental: This API is at the early stage of development and may change without backward compatibility
 // until https://github.com/open-telemetry/opentelemetry-collector/issues/8122 is resolved.
@@ -59,7 +77,10 @@ func newLogsRequest(ld plog.Logs) Request {
 
 type logsEncoding struct{}
 
-var _ QueueBatchEncoding[Request] = logsEncoding{}
+var (
+	_ QueueBatchEncoding[Request] = logsEncoding{}
+    _ CacheBatchEncoding[Request] = logsEncoding{}
+)
 
 func (logsEncoding) Unmarshal(bytes []byte) (context.Context, Request, error) {
 	if queue.PersistRequestContextOnRead {
@@ -129,8 +150,11 @@ func NewLogs(
 	if pusher == nil {
 		return nil, errNilPushLogs
 	}
-	return NewLogsRequest(ctx, set, requestFromLogs(), requestConsumeFromLogs(pusher),
-		append([]Option{internal.WithQueueBatchSettings(NewLogsQueueBatchSettings())}, options...)...)
+
+	options = append([]Option{internal.WithQueueBatchSettings(NewLogsQueueBatchSettings())}, options...)
+	options = append([]Option{internal.WithCacheBatchSettings(NewLogsCacheBatchSettings())}, options...)
+
+	return NewLogsRequest(ctx, set, requestFromLogs(), requestConsumeFromLogs(pusher), options...)
 }
 
 // requestConsumeFromLogs returns a RequestConsumeFunc that consumes plog.Logs.

@@ -27,6 +27,24 @@ var (
 	metricsUnmarshaler = &pmetric.ProtoUnmarshaler{}
 )
 
+// NewMetricsCacheBatchSettings returns a new CacheBatchSettings to configure to WithCacheBatch when using pmetric.Metrics.
+// Experimental: This API is at the early stage of development and may change without backward compatibility
+// until https://github.com/open-telemetry/opentelemetry-collector/issues/8122 is resolved.
+func NewMetricsCacheBatchSettings() CacheBatchSettings {
+	return CacheBatchSettings{
+		Encoding: metricsEncoding{},
+		Sizers: map[RequestSizerType]request.Sizer[Request]{
+			RequestSizerTypeRequests: NewRequestsSizer(),
+			RequestSizerTypeItems:    request.NewItemsSizer(),
+			RequestSizerTypeBytes: request.BaseSizer{
+				SizeofFunc: func(req request.Request) int64 {
+					return int64(metricsMarshaler.MetricsSize(req.(*metricsRequest).md))
+				},
+			},
+		},
+	}
+}
+
 // NewMetricsQueueBatchSettings returns a new QueueBatchSettings to configure to WithQueueBatch when using pmetric.Metrics.
 // Experimental: This API is at the early stage of development and may change without backward compatibility
 // until https://github.com/open-telemetry/opentelemetry-collector/issues/8122 is resolved.
@@ -59,8 +77,10 @@ func newMetricsRequest(md pmetric.Metrics) Request {
 
 type metricsEncoding struct{}
 
-var _ QueueBatchEncoding[Request] = metricsEncoding{}
-
+var (
+	_ QueueBatchEncoding[Request] = metricsEncoding{}
+    _ CacheBatchEncoding[Request] = metricsEncoding{}
+)
 func (metricsEncoding) Unmarshal(bytes []byte) (context.Context, Request, error) {
 	if queue.PersistRequestContextOnRead {
 		ctx, metrics, err := pdatareq.UnmarshalMetrics(bytes)
@@ -128,8 +148,13 @@ func NewMetrics(
 	if pusher == nil {
 		return nil, errNilPushMetrics
 	}
-	return NewMetricsRequest(ctx, set, requestFromMetrics(), requestConsumeFromMetrics(pusher),
-		append([]Option{internal.WithQueueBatchSettings(NewMetricsQueueBatchSettings())}, options...)...)
+	opts := []Option{
+		internal.WithQueueBatchSettings(NewMetricsQueueBatchSettings()),
+		internal.WithCacheBatchSettings(NewMetricsCacheBatchSettings()),
+	}
+	opts = append(opts, options...)
+
+	return NewMetricsRequest(ctx, set, requestFromMetrics(), requestConsumeFromMetrics(pusher), opts...)
 }
 
 // requestConsumeFromMetrics returns a RequestConsumeFunc that consumes pmetric.Metrics.

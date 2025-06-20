@@ -28,6 +28,11 @@ type TelemetryBuilder struct {
 	meter                             metric.Meter
 	mu                                sync.Mutex
 	registrations                     []metric.Registration
+	ExporterCacheCapacity             metric.Int64ObservableGauge
+	ExporterCacheSize                 metric.Int64ObservableGauge
+	ExporterCachedFailedLogRecords    metric.Int64Counter
+	ExporterCachedFailedMetricPoints  metric.Int64Counter
+	ExporterCachedFailedSpans         metric.Int64Counter
 	ExporterEnqueueFailedLogRecords   metric.Int64Counter
 	ExporterEnqueueFailedMetricPoints metric.Int64Counter
 	ExporterEnqueueFailedSpans        metric.Int64Counter
@@ -50,6 +55,36 @@ type telemetryBuilderOptionFunc func(mb *TelemetryBuilder)
 
 func (tbof telemetryBuilderOptionFunc) apply(mb *TelemetryBuilder) {
 	tbof(mb)
+}
+
+// RegisterExporterCacheCapacityCallback sets callback for observable ExporterCacheCapacity metric.
+func (builder *TelemetryBuilder) RegisterExporterCacheCapacityCallback(cb metric.Int64Callback) error {
+	reg, err := builder.meter.RegisterCallback(func(ctx context.Context, o metric.Observer) error {
+		cb(ctx, &observerInt64{inst: builder.ExporterCacheCapacity, obs: o})
+		return nil
+	}, builder.ExporterCacheCapacity)
+	if err != nil {
+		return err
+	}
+	builder.mu.Lock()
+	defer builder.mu.Unlock()
+	builder.registrations = append(builder.registrations, reg)
+	return nil
+}
+
+// RegisterExporterCacheSizeCallback sets callback for observable ExporterCacheSize metric.
+func (builder *TelemetryBuilder) RegisterExporterCacheSizeCallback(cb metric.Int64Callback) error {
+	reg, err := builder.meter.RegisterCallback(func(ctx context.Context, o metric.Observer) error {
+		cb(ctx, &observerInt64{inst: builder.ExporterCacheSize, obs: o})
+		return nil
+	}, builder.ExporterCacheSize)
+	if err != nil {
+		return err
+	}
+	builder.mu.Lock()
+	defer builder.mu.Unlock()
+	builder.registrations = append(builder.registrations, reg)
+	return nil
 }
 
 // RegisterExporterQueueCapacityCallback sets callback for observable ExporterQueueCapacity metric.
@@ -110,6 +145,36 @@ func NewTelemetryBuilder(settings component.TelemetrySettings, options ...Teleme
 	}
 	builder.meter = Meter(settings)
 	var err, errs error
+	builder.ExporterCacheCapacity, err = builder.meter.Int64ObservableGauge(
+		"otelcol_exporter_cache_capacity",
+		metric.WithDescription("Fixed capacity of the retry cache (in batches) [alpha]"),
+		metric.WithUnit("{batches}"),
+	)
+	errs = errors.Join(errs, err)
+	builder.ExporterCacheSize, err = builder.meter.Int64ObservableGauge(
+		"otelcol_exporter_cache_size",
+		metric.WithDescription("Current size of the retry cache (in batches) [alpha]"),
+		metric.WithUnit("{batches}"),
+	)
+	errs = errors.Join(errs, err)
+	builder.ExporterCachedFailedLogRecords, err = builder.meter.Int64Counter(
+		"otelcol_exporter_cached_failed_log_records",
+		metric.WithDescription("Number of log records failed to be added to the sending cache. [alpha]"),
+		metric.WithUnit("{records}"),
+	)
+	errs = errors.Join(errs, err)
+	builder.ExporterCachedFailedMetricPoints, err = builder.meter.Int64Counter(
+		"otelcol_exporter_cached_failed_metric_points",
+		metric.WithDescription("Number of metric points failed to be added to the sending cache. [alpha]"),
+		metric.WithUnit("{datapoints}"),
+	)
+	errs = errors.Join(errs, err)
+	builder.ExporterCachedFailedSpans, err = builder.meter.Int64Counter(
+		"otelcol_exporter_cached_failed_spans",
+		metric.WithDescription("Number of spans failed to be added to the sending cache. [alpha]"),
+		metric.WithUnit("{spans}"),
+	)
+	errs = errors.Join(errs, err)
 	builder.ExporterEnqueueFailedLogRecords, err = builder.meter.Int64Counter(
 		"otelcol_exporter_enqueue_failed_log_records",
 		metric.WithDescription("Number of log records failed to be added to the sending queue. [alpha]"),

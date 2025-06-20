@@ -250,7 +250,7 @@ genpdata:
 	pushd pdata/ && $(GOCMD) run ./internal/cmd/pdatagen/main.go && popd
 	$(MAKE) fmt
 
-INTERNAL_PROTO_SRC_DIRS := exporter/exporterhelper/internal/queue pdata/xpdata/request/internal
+INTERNAL_PROTO_SRC_DIRS := exporter/exporterhelper/internal/queue exporter/exporterhelper/internal/cache pdata/xpdata/request/internal
 INTERNAL_PROTO_FILES := $(foreach dir,$(INTERNAL_PROTO_SRC_DIRS),$(wildcard $(dir)/*.proto))
 INTERNAL_PROTOC := $(DOCKERCMD) run --rm -u ${shell id -u} -v${PWD}:${PWD} -w${PWD} ${DOCKER_PROTOBUF} --proto_path=${PWD} -I/usr/include/github.com/gogo/protobuf -I${PWD}/$(PROTO_INTERMEDIATE_DIR) --go_out=${PWD}
 

@@ -6,6 +6,46 @@
 
 The following telemetry is emitted by this component.
 
+### otelcol_exporter_cache_capacity
+
+Fixed capacity of the retry cache (in batches) [alpha]
+
+| Unit | Metric Type | Value Type |
+| ---- | ----------- | ---------- |
+| {batches} | Gauge | Int |
+
+### otelcol_exporter_cache_size
+
+Current size of the retry cache (in batches) [alpha]
+
+| Unit | Metric Type | Value Type |
+| ---- | ----------- | ---------- |
+| {batches} | Gauge | Int |
+
+### otelcol_exporter_cached_failed_log_records
+
+Number of log records failed to be added to the sending cache. [alpha]
+
+| Unit | Metric Type | Value Type | Monotonic |
+| ---- | ----------- | ---------- | --------- |
+| {records} | Sum | Int | true |
+
+### otelcol_exporter_cached_failed_metric_points
+
+Number of metric points failed to be added to the sending cache. [alpha]
+
+| Unit | Metric Type | Value Type | Monotonic |
+| ---- | ----------- | ---------- | --------- |
+| {datapoints} | Sum | Int | true |
+
+### otelcol_exporter_cached_failed_spans
+
+Number of spans failed to be added to the sending cache. [alpha]
+
+| Unit | Metric Type | Value Type | Monotonic |
+| ---- | ----------- | ---------- | --------- |
+| {spans} | Sum | Int | true |
+
 ### otelcol_exporter_enqueue_failed_log_records
 
 Number of log records failed to be added to the sending queue. [alpha]

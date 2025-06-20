@@ -10,39 +10,40 @@ import (
 
 	"go.uber.org/zap"
 
-	"go.opentelemetry.io/collector/exporter/exporterhelper/internal/queue"
-	"go.opentelemetry.io/collector/exporter/exporterhelper/internal/queuebatch"
+	"go.opentelemetry.io/collector/exporter/exporterhelper/internal/cache"
+	"go.opentelemetry.io/collector/exporter/exporterhelper/internal/cachebatch"
 	"go.opentelemetry.io/collector/exporter/exporterhelper/internal/request"
 	"go.opentelemetry.io/collector/exporter/exporterhelper/internal/sender"
 )
 
-// QueueBatchSettings is a subset of the queuebatch.Settings that are needed when used within an Exporter.
-type QueueBatchSettings[T any] struct {
-	Encoding    queue.Encoding[T]
+// CacheBatchSettings is a subset of the cachebatch.Settings that are needed when used within an Exporter.
+type CacheBatchSettings[T any] struct {
+	Encoding    cache.Encoding[T]
 	Sizers      map[request.SizerType]request.Sizer[T]
-	Partitioner queuebatch.Partitioner[T]
+	Partitioner cachebatch.Partitioner[T]
 }
 
-// NewDefaultQueueConfig returns the default config for queuebatch.Config.
-// By default, the queue stores 1000 requests of telemetry and is non-blocking when full.
-func NewDefaultQueueConfig() queuebatch.Config {
-	return queuebatch.Config{
+// NewDefaultCacheConfig returns the default config for cachebatch.Config.
+// By default, the cache stores 1000 requests of telemetry and is non-blocking when full.
+func NewDefaultCacheConfig() cachebatch.Config {
+	return cachebatch.Config{
 		Enabled:      true,
 		Sizer:        request.SizerTypeRequests,
 		NumConsumers: 10,
-		// By default, batches are 8192 spans, for a total of up to 8 million spans in the queue
+		// By default, batches are 8192 spans, for a total of up to 8 million spans in the cache
 		// This can be estimated at 1-4 GB worth of maximum memory usage
 		// This default is probably still too high, and may be adjusted further down in a future release
-		QueueSize:       1_000,
+		CacheSize:       1_000,
+		CacheMode:       cache.ModeQueue,
 		BlockOnOverflow: false,
 		StorageID:       nil,
 		Batch:           nil,
 	}
 }
 
-func NewQueueSender(
-	qSet queuebatch.Settings[request.Request],
-	qCfg queuebatch.Config,
+func NewCacheSender(
+	cSet cachebatch.Settings[request.Request],
+	cCfg cachebatch.Config,
 	bCfg BatcherConfig,
 	exportFailureMessage string,
 	next sender.Sender[request.Request],
@@ -52,7 +53,7 @@ func NewQueueSender(
 		// be modified by the downstream components like the batcher.
 		itemsCount := req.ItemsCount()
 		if errSend := next.Send(ctx, req); errSend != nil {
-			qSet.Telemetry.Logger.Error("Exporting failed. Dropping data."+exportFailureMessage,
+			cSet.Telemetry.Logger.Error("Exporting failed. Dropping data."+exportFailureMessage,
 				zap.Error(errSend), zap.Int("dropped_items", itemsCount))
 			return errSend
 		}
@@ -61,41 +62,41 @@ func NewQueueSender(
 
 	// TODO: Remove this when WithBatcher is removed.
 	if bCfg.Enabled {
-		return queuebatch.NewQueueBatchLegacyBatcher(qSet, newQueueBatchConfig(qCfg, bCfg), exportFunc)
+		return cachebatch.NewCacheBatchLegacyBatcher(cSet, newCacheBatchConfig(cCfg, bCfg), exportFunc)
 	}
-	return queuebatch.NewQueueBatch(qSet, newQueueBatchConfig(qCfg, bCfg), exportFunc)
+	return cachebatch.NewCacheBatch(cSet, newCacheBatchConfig(cCfg, bCfg), exportFunc)
 }
 
-func newQueueBatchConfig(qCfg queuebatch.Config, bCfg BatcherConfig) queuebatch.Config {
+func newCacheBatchConfig(cCfg cachebatch.Config, bCfg BatcherConfig) cachebatch.Config {
 	// Overwrite configuration with the legacy BatcherConfig configured via WithBatcher.
 	// TODO: Remove this when WithBatcher is removed.
 	if !bCfg.Enabled {
-		return qCfg
+		return cCfg
 	}
 
-	// User configured queueing, copy all config.
-	if qCfg.Enabled {
+	// User configured cacheing, copy all config.
+	if cCfg.Enabled {
 		// Overwrite configuration with the legacy BatcherConfig configured via WithBatcher.
 		// TODO: Remove this when WithBatcher is removed.
-		qCfg.Batch = &queuebatch.BatchConfig{
+		cCfg.Batch = &cachebatch.BatchConfig{
 			FlushTimeout: bCfg.FlushTimeout,
 			MinSize:      bCfg.MinSize,
 			MaxSize:      bCfg.MaxSize,
 		}
-		return qCfg
+		return cCfg
 	}
 
-	// This can happen only if the deprecated way to configure batching is used with a "disabled" queue.
+	// This can happen only if the deprecated way to configure batching is used with a "disabled" cache.
 	// TODO: Remove this when WithBatcher is removed.
-	return queuebatch.Config{
+	return cachebatch.Config{
 		Enabled:         true,
 		WaitForResult:   true,
 		Sizer:           request.SizerTypeRequests,
-		QueueSize:       math.MaxInt,
+		CacheSize:       math.MaxInt,
 		NumConsumers:    runtime.NumCPU(),
 		BlockOnOverflow: true,
 		StorageID:       nil,
-		Batch: &queuebatch.BatchConfig{
+		Batch: &cachebatch.BatchConfig{
 			FlushTimeout: bCfg.FlushTimeout,
 			MinSize:      bCfg.MinSize,
 			MaxSize:      bCfg.MaxSize,

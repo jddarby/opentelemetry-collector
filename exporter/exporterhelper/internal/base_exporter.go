@@ -14,6 +14,7 @@ import (
 	"go.opentelemetry.io/collector/config/configretry"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/exporter"
+	"go.opentelemetry.io/collector/exporter/exporterhelper/internal/cachebatch"
 	"go.opentelemetry.io/collector/exporter/exporterhelper/internal/queuebatch"
 	"go.opentelemetry.io/collector/exporter/exporterhelper/internal/request"
 	"go.opentelemetry.io/collector/exporter/exporterhelper/internal/sender"
@@ -34,8 +35,9 @@ type BaseExporter struct {
 	ExportFailureMessage string
 
 	// Chain of senders that the exporter helper applies before passing the data to the actual exporter.
-	// The data is handled by each sender in the respective order starting from the QueueBatch.
+	// The data is handled by each sender in the respective order starting from the CacheBatch/QueueBatch.
 	// Most of the senders are optional, and initialized with a no-op path-through sender.
+	CacheSender sender.Sender[request.Request] // CacheSender is used to cache the requests before sending them out.
 	QueueSender sender.Sender[request.Request]
 	RetrySender sender.Sender[request.Request]
 
@@ -48,6 +50,8 @@ type BaseExporter struct {
 
 	queueBatchSettings QueueBatchSettings[request.Request]
 	queueCfg           queuebatch.Config
+	cacheBatchSettings CacheBatchSettings[request.Request]
+	cacheCfg           cachebatch.Config
 	batcherCfg         BatcherConfig
 }
 
@@ -88,20 +92,40 @@ func NewBaseExporter(set exporter.Settings, signal pipeline.Signal, pusher sende
 		be.ConsumerOptions = append(be.ConsumerOptions, consumer.WithCapabilities(consumer.Capabilities{MutatesData: true}))
 	}
 
+	if be.cacheCfg.Enabled && be.queueCfg.Enabled {
+		return nil, errors.New("cannot use cache and queue at the same time")
+	}
+
 	if be.queueCfg.Enabled || be.batcherCfg.Enabled {
-		qSet := queuebatch.Settings[request.Request]{
-			Signal:      signal,
-			ID:          set.ID,
-			Telemetry:   set.TelemetrySettings,
-			Encoding:    be.queueBatchSettings.Encoding,
-			Sizers:      be.queueBatchSettings.Sizers,
-			Partitioner: be.queueBatchSettings.Partitioner,
-		}
+			qSet := queuebatch.Settings[request.Request]{
+				Signal:      signal,
+				ID:          set.ID,
+				Telemetry:   set.TelemetrySettings,
+				Encoding:    be.queueBatchSettings.Encoding,
+				Sizers:      be.queueBatchSettings.Sizers,
+				Partitioner: be.queueBatchSettings.Partitioner,
+			}
 		be.QueueSender, err = NewQueueSender(qSet, be.queueCfg, be.batcherCfg, be.ExportFailureMessage, be.firstSender)
 		if err != nil {
 			return nil, err
 		}
 		be.firstSender = be.QueueSender
+	}
+
+	if be.cacheCfg.Enabled {
+		cSet := cachebatch.Settings[request.Request]{
+			Signal:    signal,
+			ID:        set.ID,
+			Telemetry: set.TelemetrySettings,
+			Encoding:  be.cacheBatchSettings.Encoding,
+			Sizers:    be.cacheBatchSettings.Sizers,
+			Partitioner: be.cacheBatchSettings.Partitioner,
+		}
+		be.CacheSender, err = NewCacheSender(cSet, be.cacheCfg, be.batcherCfg, be.ExportFailureMessage, be.firstSender)
+		if err != nil {
+			return nil, err
+		}
+		be.firstSender = be.CacheSender
 	}
 
 	return be, nil
@@ -126,9 +150,13 @@ func (be *BaseExporter) Start(ctx context.Context, host component.Host) error {
 		return err
 	}
 
-	// Last start the QueueBatch.
+	// Last start the QueueBatch or CacheBatch sender if configured.
 	if be.QueueSender != nil {
 		return be.QueueSender.Start(ctx, host)
+	}
+
+	if be.CacheSender != nil {
+		return be.CacheSender.Start(ctx, host)
 	}
 
 	return nil
@@ -145,6 +173,11 @@ func (be *BaseExporter) Shutdown(ctx context.Context) error {
 	// Then shutdown the queue sender.
 	if be.QueueSender != nil {
 		err = multierr.Append(err, be.QueueSender.Shutdown(ctx))
+	}
+
+	// Then shutdown the cache sender.
+	if be.CacheSender != nil {
+		err = multierr.Append(err, be.CacheSender.Shutdown(ctx))
 	}
 
 	// Last shutdown the wrapped exporter itself.
@@ -187,6 +220,37 @@ func WithRetry(config configretry.BackOffConfig) Option {
 			return nil
 		}
 		o.retryCfg = config
+		return nil
+	}
+}
+
+// WithCache overrides the default cachebatch.Config for an exporter.
+// The default cachebatch.Config is to disable cacheing.
+// This option cannot be used with the new exporter helpers New[Traces|Metrics|Logs]RequestExporter.
+func WithCache(cfg cachebatch.Config) Option {
+	return func(o *BaseExporter) error {
+		if o.cacheBatchSettings.Encoding == nil && cfg.Enabled {
+			return errors.New("WithCache option is not available for the new request exporters, use WithCacheBatch instead")
+		}
+		return WithCacheBatch(cfg, o.cacheBatchSettings)(o)
+	}
+}
+
+// WithCacheBatch enables cacheing for an exporter.
+// This option should be used with the new exporter helpers New[Traces|Metrics|Logs]RequestExporter.
+// Experimental: This API is at the early stage of development and may change without backward compatibility
+// until https://github.com/open-telemetry/opentelemetry-collector/issues/8122 is resolved.
+func WithCacheBatch(cfg cachebatch.Config, set CacheBatchSettings[request.Request]) Option {
+	return func(o *BaseExporter) error {
+		if !cfg.Enabled {
+			o.ExportFailureMessage += " Try enabling sending_cache to survive temporary failures."
+			return nil
+		}
+		if cfg.StorageID != nil && set.Encoding == nil {
+			return errors.New("`CacheBatchSettings.Encoding` must not be nil when persistent cache is enabled")
+		}
+		o.cacheBatchSettings = set
+		o.cacheCfg = cfg
 		return nil
 	}
 }
@@ -244,6 +308,15 @@ func WithBatcher(cfg BatcherConfig) Option {
 	}
 }
 
+// WithCacheBatchSettings is used to set the CacheBatchSettings for the new request based exporter helper.
+// It must be provided as the first option when creating a new exporter helper.
+func WithCacheBatchSettings(set CacheBatchSettings[request.Request]) Option {
+	return func(o *BaseExporter) error {
+		o.cacheBatchSettings = set
+		return nil
+	}
+}
+
 // WithQueueBatchSettings is used to set the QueueBatchSettings for the new request based exporter helper.
 // It must be provided as the first option when creating a new exporter helper.
 func WithQueueBatchSettings(set QueueBatchSettings[request.Request]) Option {
@@ -252,3 +325,4 @@ func WithQueueBatchSettings(set QueueBatchSettings[request.Request]) Option {
 		return nil
 	}
 }
+

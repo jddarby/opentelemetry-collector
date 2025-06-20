@@ -21,6 +21,9 @@ import (
 // Config defines configuration for OTLP exporter.
 type Config struct {
 	TimeoutConfig exporterhelper.TimeoutConfig    `mapstructure:",squash"` // squash ensures fields are correctly decoded in embedded struct.
+	// CacheConfig defines the configuration for the sending cache.
+	CacheConfig   exporterhelper.CacheBatchConfig `mapstructure:"sending_cache"`
+	// QueueConfig defines the configuration for the sending queue.
 	QueueConfig   exporterhelper.QueueBatchConfig `mapstructure:"sending_queue"`
 	RetryConfig   configretry.BackOffConfig       `mapstructure:"retry_on_failure"`
 	ClientConfig  configgrpc.ClientConfig         `mapstructure:",squash"` // squash ensures fields are correctly decoded in embedded struct.
@@ -53,6 +56,10 @@ func (c *Config) Validate() error {
 	endpoint := c.sanitizedEndpoint()
 	if endpoint == "" {
 		return errors.New(`requires a non-empty "endpoint"`)
+	}
+
+	if c.CacheConfig.Enabled && c.QueueConfig.Enabled {
+		return errors.New("cannot enable both sending_cache and sending_queue at the same time")
 	}
 
 	// Validate that the port is in the address

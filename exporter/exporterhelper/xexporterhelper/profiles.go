@@ -62,7 +62,10 @@ func newProfilesRequest(pd pprofile.Profiles) exporterhelper.Request {
 
 type profilesEncoding struct{}
 
-var _ exporterhelper.QueueBatchEncoding[request.Request] = profilesEncoding{}
+var (
+	_ exporterhelper.QueueBatchEncoding[request.Request] = profilesEncoding{}
+	_ exporterhelper.CacheBatchEncoding[request.Request] = profilesEncoding{}
+)
 
 func (profilesEncoding) Unmarshal(bytes []byte) (context.Context, request.Request, error) {
 	if queue.PersistRequestContextOnRead {

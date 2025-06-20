@@ -43,7 +43,7 @@ func createDefaultConfig() component.Config {
 	return &Config{
 		TimeoutConfig: exporterhelper.NewDefaultTimeoutConfig(),
 		RetryConfig:   configretry.NewDefaultBackOffConfig(),
-		QueueConfig:   exporterhelper.NewDefaultQueueConfig(),
+		// QueueConfig:   exporterhelper.NewDefaultQueueConfig(),
 		ClientConfig:  clientCfg,
 	}
 }
@@ -60,6 +60,7 @@ func createTraces(
 		exporterhelper.WithCapabilities(consumer.Capabilities{MutatesData: false}),
 		exporterhelper.WithTimeout(oCfg.TimeoutConfig),
 		exporterhelper.WithRetry(oCfg.RetryConfig),
+		exporterhelper.WithCache(oCfg.CacheConfig),
 		exporterhelper.WithQueue(oCfg.QueueConfig),
 		exporterhelper.WithBatcher(oCfg.BatcherConfig), //nolint:staticcheck // SA1019
 		exporterhelper.WithStart(oce.start),
@@ -79,6 +80,7 @@ func createMetrics(
 		exporterhelper.WithCapabilities(consumer.Capabilities{MutatesData: false}),
 		exporterhelper.WithTimeout(oCfg.TimeoutConfig),
 		exporterhelper.WithRetry(oCfg.RetryConfig),
+		exporterhelper.WithCache(oCfg.CacheConfig),
 		exporterhelper.WithQueue(oCfg.QueueConfig),
 		exporterhelper.WithBatcher(oCfg.BatcherConfig), //nolint:staticcheck // SA1019
 		exporterhelper.WithStart(oce.start),
@@ -98,6 +100,7 @@ func createLogs(
 		exporterhelper.WithCapabilities(consumer.Capabilities{MutatesData: false}),
 		exporterhelper.WithTimeout(oCfg.TimeoutConfig),
 		exporterhelper.WithRetry(oCfg.RetryConfig),
+		exporterhelper.WithCache(oCfg.CacheConfig),
 		exporterhelper.WithQueue(oCfg.QueueConfig),
 		exporterhelper.WithBatcher(oCfg.BatcherConfig), //nolint:staticcheck // SA1019
 		exporterhelper.WithStart(oce.start),
@@ -117,6 +120,7 @@ func createProfilesExporter(
 		exporterhelper.WithCapabilities(consumer.Capabilities{MutatesData: false}),
 		exporterhelper.WithTimeout(oCfg.TimeoutConfig),
 		exporterhelper.WithRetry(oCfg.RetryConfig),
+		exporterhelper.WithCache(oCfg.CacheConfig),
 		exporterhelper.WithQueue(oCfg.QueueConfig),
 		exporterhelper.WithBatcher(oCfg.BatcherConfig), //nolint:staticcheck // SA1019
 		exporterhelper.WithStart(oce.start),
